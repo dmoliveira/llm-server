@@ -9,7 +9,9 @@ import uvicorn
 from rich.console import Console
 from rich.table import Table
 
+from .capacity import plan_capacity
 from .catalog import cached_models, delete, download, models, search
+from .host import host_facts
 from .profiles import diff_profile, load_lock, load_profile, plan_apply, resolve_lock, write_lock
 from .provenance import acquire_locked_snapshot, snapshot_digest
 from .runtime import ServiceManager
@@ -47,6 +49,15 @@ def serve(host: str = "127.0.0.1", port: int = 8787) -> None:
         f"[bold green]● CONTROL PLANE[/bold green] http://{host}:{port}  [dim]docs: /docs[/dim]"
     )
     uvicorn.run("llm_server.api:app", host=host, port=port)
+
+
+@app.command("capacity")
+def capacity(model_bytes: int = typer.Option(..., min=0), max_kv_size: int | None = None) -> None:
+    """Estimate whether one model configuration fits with conservative unified-memory headroom."""
+    facts = host_facts()
+    plan = plan_capacity(facts.memory_bytes, model_bytes, max_kv_size)
+    console.print(f"[cyan]{plan.status.upper()}[/cyan] {plan.reason}")
+    console.print(plan.model_dump_json(indent=2))
 
 
 @models_app.command("list")
