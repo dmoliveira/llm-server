@@ -28,6 +28,21 @@ def test_log_tail_query_is_bounded() -> None:
     assert client.get("/api/v1/services/example/logs?lines=501").status_code == 422
 
 
+def test_model_search_limit_is_bounded() -> None:
+    client = TestClient(app)
+    assert client.get("/api/v1/models/search?query=qwen&limit=0").status_code == 422
+    assert client.get("/api/v1/models/search?query=qwen&limit=-1").status_code == 422
+    assert client.get("/api/v1/models/search?query=qwen&limit=51").status_code == 422
+
+
+def test_model_search_query_is_non_blank() -> None:
+    client = TestClient(app)
+    assert client.get("/api/v1/models/search?query=").json() == {
+        "detail": "Request validation failed"
+    }
+    assert client.get("/api/v1/models/search?query=%20%20").status_code == 422
+
+
 def test_unknown_service_is_not_found() -> None:
     client = TestClient(app)
     assert client.post("/api/v1/services/missing/stop").status_code == 404

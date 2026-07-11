@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from hashlib import sha256
 from pathlib import Path
 
 from huggingface_hub import HfApi
@@ -28,12 +29,19 @@ class Lockfile(BaseModel):
     profile_schema_version: int
     service: ServiceSpec
     resolved_model: ModelRef
+    profile_digest: str
 
 
 class ApplyPlan(BaseModel):
     action: str
     service: str
     detail: str
+
+
+def profile_digest(profile: Profile) -> str:
+    return sha256(
+        json.dumps(profile.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
 
 
 def load_profile(path: Path) -> Profile:
@@ -64,6 +72,7 @@ def resolve_lock(profile: Profile, api: HfApi | None = None) -> Lockfile:
             update={"model": ModelRef(repository=repository, revision=revision)}
         ),
         resolved_model=ModelRef(repository=repository, revision=revision),
+        profile_digest=profile_digest(profile),
     )
 
 
@@ -90,6 +99,8 @@ def load_lock(path: Path) -> Lockfile:
 def diff_profile(profile: Profile, lock: Lockfile) -> list[str]:
     """Return deterministic intent differences; never mutates a service."""
     differences: list[str] = []
+    if profile_digest(profile) != lock.profile_digest:
+        differences.append("profile content digest differs from lock")
     if profile.schema_version != lock.profile_schema_version:
         differences.append(
             f"profile schema: {profile.schema_version} → {lock.profile_schema_version}"
@@ -101,14 +112,6 @@ def diff_profile(profile: Profile, lock: Lockfile) -> list[str]:
     if profile.service.max_kv_size != lock.service.max_kv_size:
         differences.append(
             f"max_kv_size: {profile.service.max_kv_size} → {lock.service.max_kv_size}"
-        )
-    if profile.service.model.repository != lock.resolved_model.repository:
-        differences.append(
-            f"model: {profile.service.model.repository} → {lock.resolved_model.repository}"
-        )
-    if profile.service.model.revision != lock.resolved_model.revision:
-        differences.append(
-            f"revision: {profile.service.model.revision} → {lock.resolved_model.revision}"
         )
     return differences
 
