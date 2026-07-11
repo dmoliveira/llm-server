@@ -14,7 +14,7 @@ from llm_server.profiles import (
     resolve_lock,
     write_lock,
 )
-from llm_server.provenance import acquire_locked_snapshot
+from llm_server.provenance import acquire_locked_snapshot, snapshot_digest
 
 
 def profile() -> Profile:
@@ -95,6 +95,14 @@ def test_acquire_uses_the_locked_immutable_revision(monkeypatch, tmp_path: Path)
     monkeypatch.setattr("llm_server.provenance.snapshot_download", fake_download)
     assert acquire_locked_snapshot(lock, tmp_path) == tmp_path / "snapshot"
     assert captured["revision"] == "d" * 40
+
+
+def test_snapshot_digest_is_deterministic_and_confined(tmp_path: Path) -> None:
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    (snapshot / "config.json").write_text("{}")
+    (snapshot / "weights.safetensors").write_bytes(b"weights")
+    assert snapshot_digest(snapshot) == snapshot_digest(snapshot)
 
 
 def test_profile_apply_is_dry_run_without_yes(monkeypatch, tmp_path: Path) -> None:
