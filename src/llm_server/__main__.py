@@ -75,7 +75,7 @@ def service_start(
     model: str,
     name: str | None = None,
     port: int = 8080,
-    max_kv_size: int | None = None,
+    max_kv_size: int | None = typer.Option(None, min=128),
     wait: bool = True,
 ) -> None:
     service = manager.start(model, name or model.replace("/", "--"), port, max_kv_size)

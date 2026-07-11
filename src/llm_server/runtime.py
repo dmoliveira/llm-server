@@ -125,6 +125,8 @@ class ServiceManager:
     ) -> Service:
         if not name.replace("-", "_").replace("_", "a").isalnum():
             raise ValueError("Service names may contain letters, numbers, hyphens, and underscores")
+        if max_kv_size is not None and max_kv_size < 128:
+            raise ValueError("max_kv_size must be at least 128 when set")
         with self._locked():
             services = self._read()
             if name in services and self._owned(services[name]):
@@ -137,7 +139,7 @@ class ServiceManager:
             executable = shutil.which("mlx_lm.server")
             command = [executable] if executable else [sys.executable, "-m", "mlx_lm.server"]
             command += ["--model", model.repository, "--host", "127.0.0.1", "--port", str(port)]
-            if max_kv_size:
+            if max_kv_size is not None:
                 command += ["--max-kv-size", str(max_kv_size)]
             with log_path.open("a") as log:
                 log.write(f"\n--- llm-server starting {model.repository} on 127.0.0.1:{port} ---\n")
@@ -246,14 +248,16 @@ class ServiceManager:
 
     def restart(self, name: str) -> Service:
         service = self.get(name)
-        self.stop(name)
+        self.stop(name, observed=service)
         return self.start(service.repository, name, service.port, service.max_kv_size)
 
     def logs(self, name: str, lines: int = 80) -> str:
+        if not 1 <= lines <= 500:
+            raise ValueError("lines must be between 1 and 500")
         service = self.get(name)
         path = self.logs_dir / service.log_file
         return (
             "No log entries yet."
             if not path.exists()
-            else "\n".join(path.read_text(errors="replace").splitlines()[-min(lines, 500) :])
+            else "\n".join(path.read_text(errors="replace").splitlines()[-lines:])
         )

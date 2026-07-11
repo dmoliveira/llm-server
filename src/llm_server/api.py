@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
@@ -100,5 +100,5 @@ def restart(name: str) -> dict[str, object]:
 
 
 @app.get("/api/v1/services/{name}/logs")
-def logs(name: str, lines: int = 80) -> dict[str, str]:
+def logs(name: str, lines: int = Query(default=80, ge=1, le=500)) -> dict[str, str]:
     return safe(lambda: {"logs": manager.logs(name, lines)})

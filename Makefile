@@ -4,6 +4,7 @@ PORT ?= 8787
 MODEL ?= qwen3-8b
 SERVICE ?= $(MODEL)
 MODEL_PORT ?= 8080
+MAX_KV_SIZE ?=
 LIMIT ?= 10
 
 # Preserve caller input as raw exported values. Recipes consume shell variables so Make never
@@ -11,10 +12,18 @@ LIMIT ?= 10
 export LLM_SERVER_HOST := $(value HOST)
 export LLM_SERVER_PORT := $(value PORT)
 export LLM_SERVER_MODEL := $(value MODEL)
-export LLM_SERVER_SERVICE := $(value SERVICE)
 export LLM_SERVER_MODEL_PORT := $(value MODEL_PORT)
+export LLM_SERVER_MAX_KV_SIZE := $(value MAX_KV_SIZE)
 export LLM_SERVER_QUERY := $(value QUERY)
 export LLM_SERVER_LIMIT := $(value LIMIT)
+
+# SERVICE defaults to MODEL. Keep the derived default concrete while preserving a caller's raw
+# explicit SERVICE value so it cannot be re-expanded as Make syntax.
+ifeq ($(origin SERVICE), file)
+export LLM_SERVER_SERVICE := $(value MODEL)
+else
+export LLM_SERVER_SERVICE := $(value SERVICE)
+endif
 
 ##@ Help
 .PHONY: help
@@ -52,8 +61,8 @@ models-delete: ## Delete cached MODEL alias/repository (MODEL=qwen3-8b).
 
 ##@ Services
 .PHONY: start stop restart status logs
-start: ## Start MODEL as SERVICE on MODEL_PORT (MODEL=qwen3-8b MODEL_PORT=8080).
-	uv run python -m llm_server services start "$${LLM_SERVER_MODEL}" --name "$${LLM_SERVER_SERVICE}" --port "$${LLM_SERVER_MODEL_PORT}"
+start: ## Start MODEL as SERVICE on MODEL_PORT (optional MAX_KV_SIZE=4096).
+	@if [ -n "$${LLM_SERVER_MAX_KV_SIZE}" ]; then uv run python -m llm_server services start "$${LLM_SERVER_MODEL}" --name "$${LLM_SERVER_SERVICE}" --port "$${LLM_SERVER_MODEL_PORT}" --max-kv-size "$${LLM_SERVER_MAX_KV_SIZE}"; else uv run python -m llm_server services start "$${LLM_SERVER_MODEL}" --name "$${LLM_SERVER_SERVICE}" --port "$${LLM_SERVER_MODEL_PORT}"; fi
 stop: ## Stop SERVICE cleanly (SERVICE=qwen3-8b).
 	uv run python -m llm_server services stop "$${LLM_SERVER_SERVICE}"
 restart: ## Restart SERVICE with its saved settings.

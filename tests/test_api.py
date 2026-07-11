@@ -16,3 +16,9 @@ def test_invalid_service_name_is_rejected() -> None:
         "/api/v1/services", json={"model": "qwen3-8b", "name": "../bad", "port": 8080}
     )
     assert response.status_code == 422
+
+
+def test_log_tail_query_is_bounded() -> None:
+    client = TestClient(app)
+    assert client.get("/api/v1/services/example/logs?lines=0").status_code == 422
+    assert client.get("/api/v1/services/example/logs?lines=501").status_code == 422

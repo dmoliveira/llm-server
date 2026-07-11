@@ -29,6 +29,8 @@ make help
 # Model servers use their own ports and expose MLX-LM's OpenAI-compatible API.
 make start MODEL=qwen3-8b SERVICE=qwen MODEL_PORT=8080
 make start MODEL=gemma3-12b SERVICE=gemma MODEL_PORT=8081
+# Optionally cap long-context memory for one service.
+make start MODEL=qwen3-8b SERVICE=writer MODEL_PORT=8082 MAX_KV_SIZE=4096
 make status
 ```
 
@@ -43,6 +45,7 @@ Then call a running model at `http://127.0.0.1:8080/v1/chat/completions`. Start 
 | Search the public Hub | `make models-search QUERY="qwen mlx" LIMIT=10` |
 | Download / remove a model | `make models-download MODEL=qwen3-8b` / `make models-delete MODEL=qwen3-8b` |
 | Start / stop / restart | `make start …` / `make stop SERVICE=qwen` / `make restart SERVICE=qwen` |
+| Cap KV cache memory | `make start MODEL=qwen3-8b MAX_KV_SIZE=4096` |
 | See health + logs | `make status` / `make logs SERVICE=qwen` |
 
 Every Make target calls `python -m llm_server`; no hidden shell scripts or daemon manager are required.
@@ -53,6 +56,7 @@ The controller deliberately binds to localhost. It does **not** provide remote a
 
 | Endpoint | Purpose |
 | --- | --- |
+| `GET /health` | control-plane health and version |
 | `GET /` | visual dashboard |
 | `GET /docs` | interactive OpenAPI docs |
 | `GET /api/v1/models/catalog` | curated aliases |
@@ -60,7 +64,9 @@ The controller deliberately binds to localhost. It does **not** provide remote a
 | `GET /api/v1/models/search?query=qwen` | bounded public Hub search |
 | `GET /api/v1/status` | all services |
 | `POST /api/v1/services` | spawn a model service |
+| `POST /api/v1/services/{name}/ready` | wait for MLX-LM readiness |
 | `POST /api/v1/services/{name}/stop` | terminate a process group |
+| `POST /api/v1/services/{name}/restart` | restart with saved settings |
 | `GET /api/v1/services/{name}/logs` | bounded, service-owned log tail |
 
 ## 🧠 Model notes for M5

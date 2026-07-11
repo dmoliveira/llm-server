@@ -143,3 +143,11 @@ def test_readiness_compare_and_set_refuses_replacement(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match="changed concurrently"):
         subject._set("safe", "ready", observed=original)
     assert subject._read()["safe"].pid == 456
+
+
+def test_runtime_validates_log_bounds_and_kv_size(tmp_path: Path) -> None:
+    subject = manager(tmp_path)
+    with pytest.raises(ValueError, match="lines"):
+        subject.logs("safe", 0)
+    with pytest.raises(ValueError, match="max_kv_size"):
+        subject.start("qwen3-8b", "safe", 8080, 127)
