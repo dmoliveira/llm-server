@@ -114,7 +114,7 @@ def downloaded() -> DownloadedModelsResponse:
 
 
 @app.get("/api/v1/models/search", response_model=SearchModelsResponse, responses=ERROR_RESPONSES)
-def model_search(query: str, limit: int = 10) -> SearchModelsResponse:
+def model_search(query: str, limit: int = Query(default=10, ge=1, le=50)) -> SearchModelsResponse:
     return safe(lambda: {"models": search(query, limit)})
 
 
