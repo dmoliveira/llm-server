@@ -11,6 +11,7 @@ from rich.table import Table
 
 from .catalog import cached_models, delete, download, models, search
 from .profiles import diff_profile, load_lock, load_profile, plan_apply, resolve_lock, write_lock
+from .provenance import acquire_locked_snapshot
 from .runtime import ServiceManager
 
 app = typer.Typer(
@@ -115,6 +116,36 @@ def profile_plan(lockfile: Path = DEFAULT_LOCK_FILE) -> None:
     """Preview a lock-aware apply action; this command never changes services."""
     plan = plan_apply(load_lock(lockfile), manager.list())
     console.print(f"[cyan]{plan.action.upper()}[/cyan] {plan.service}: {plan.detail}")
+
+
+@profiles_app.command("apply")
+def profile_apply(lockfile: Path = DEFAULT_LOCK_FILE, yes: bool = False) -> None:
+    """Apply a locked service only with --yes; the default is a non-mutating preview."""
+    lock = load_lock(lockfile)
+    plan = plan_apply(lock, manager.list())
+    if not yes:
+        console.print(f"[cyan]{plan.action.upper()}[/cyan] {plan.service}: {plan.detail}")
+        console.print(
+            "[dim]Re-run with --yes to acquire the locked snapshot and start it offline.[/dim]"
+        )
+        return
+    if plan.action == "conflict":
+        raise typer.BadParameter(plan.detail)
+    if plan.action == "unchanged":
+        console.print(f"[green]✓ UNCHANGED[/green] {plan.service}")
+        return
+    snapshot = acquire_locked_snapshot(lock)
+    service = manager.start(
+        lock.resolved_model.repository,
+        lock.service.name,
+        lock.service.port,
+        lock.service.max_kv_size,
+        revision=lock.resolved_model.revision,
+        snapshot_path=snapshot,
+        offline=True,
+    )
+    service = manager.mark_ready(service.name)
+    console.print(f"[green]● {service.status.upper()}[/green] {service.repository}")
 
 
 @services_app.command("status")
