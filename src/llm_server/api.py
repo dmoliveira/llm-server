@@ -21,6 +21,7 @@ from .contracts import (
     ServiceResponse,
     ServicesResponse,
 )
+from .host import HostFacts, host_facts
 from .runtime import ServiceManager, StateCorruptError
 
 app = FastAPI(title="LLM Server", version=__version__)
@@ -101,6 +102,12 @@ def dashboard(service_manager: ServiceManager = Depends(get_manager)) -> str:
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return {"status": "ok", "version": __version__}
+
+
+@app.get("/api/v1/host", response_model=HostFacts)
+def host() -> HostFacts:
+    """Return local machine facts used by capacity planning; no remote telemetry is emitted."""
+    return host_facts()
 
 
 @app.get("/api/v1/models/catalog", response_model=CatalogResponse)
