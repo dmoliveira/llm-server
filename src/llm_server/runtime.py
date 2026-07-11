@@ -35,6 +35,9 @@ class Service(BaseModel):
     max_kv_size: int | None = None
     process_identity: str | None = None
     error: str | None = None
+    revision: str | None = None
+    snapshot_path: str | None = None
+    offline: bool = False
 
 
 class StateCorruptError(RuntimeError):
@@ -166,7 +169,14 @@ class ServiceManager:
             return list(services.values())
 
     def start(
-        self, identifier: str, name: str, port: int, max_kv_size: int | None = None
+        self,
+        identifier: str,
+        name: str,
+        port: int,
+        max_kv_size: int | None = None,
+        revision: str | None = None,
+        snapshot_path: Path | None = None,
+        offline: bool = False,
     ) -> Service:
         if not name.replace("-", "_").replace("_", "a").isalnum():
             raise ValueError("Service names may contain letters, numbers, hyphens, and underscores")
@@ -181,17 +191,35 @@ class ServiceManager:
             if not self._port_available(port):
                 raise ValueError(f"Port {port} is already in use on 127.0.0.1")
             model = resolve(identifier)
+            if offline and snapshot_path is None:
+                raise ValueError("Offline launch requires a verified local snapshot path")
+            if snapshot_path is not None and not snapshot_path.is_dir():
+                raise ValueError(f"Snapshot path does not exist: {snapshot_path}")
             self.logs_dir.mkdir(parents=True, exist_ok=True)
             log_path = self.logs_dir / f"{name}.log"
             executable = shutil.which("mlx_lm.server")
             command = [executable] if executable else [sys.executable, "-m", "mlx_lm.server"]
-            command += ["--model", model.repository, "--host", "127.0.0.1", "--port", str(port)]
+            command += [
+                "--model",
+                str(snapshot_path) if snapshot_path else model.repository,
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+            ]
             if max_kv_size is not None:
                 command += ["--max-kv-size", str(max_kv_size)]
             with log_path.open("a") as log:
                 log.write(f"\n--- llm-server starting {model.repository} on 127.0.0.1:{port} ---\n")
+                environment = os.environ.copy()
+                if offline:
+                    environment["HF_HUB_OFFLINE"] = "1"
                 process = subprocess.Popen(
-                    command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True
+                    command,
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                    env=environment,
                 )
             service = Service(
                 name=name,
@@ -203,6 +231,9 @@ class ServiceManager:
                 log_file=log_path.name,
                 max_kv_size=max_kv_size,
                 process_identity=self._identity(process.pid),
+                revision=revision,
+                snapshot_path=str(snapshot_path) if snapshot_path else None,
+                offline=offline,
             )
             services[name] = service
             self._write(services)

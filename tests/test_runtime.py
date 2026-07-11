@@ -162,6 +162,22 @@ def test_start_rejects_a_port_owned_outside_the_manager(tmp_path: Path) -> None:
         subject.start("qwen3-8b", "safe", 8080)
 
 
+@patch("llm_server.runtime.subprocess.Popen")
+@patch.object(ServiceManager, "_identity", return_value="started")
+def test_offline_start_uses_a_local_snapshot_and_disables_hub_network(
+    _: MagicMock, popen: MagicMock, tmp_path: Path
+) -> None:
+    popen.return_value.pid = 4321
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    service = manager(tmp_path).start(
+        "qwen3-8b", "safe", 8080, snapshot_path=snapshot, revision="a" * 40, offline=True
+    )
+    assert popen.call_args.args[0][2:4] == [str(snapshot), "--host"]
+    assert popen.call_args.kwargs["env"]["HF_HUB_OFFLINE"] == "1"
+    assert service.snapshot_path == str(snapshot)
+
+
 def test_logs_reject_a_path_outside_the_managed_directory(tmp_path: Path) -> None:
     subject = manager(tmp_path)
     subject._write(
