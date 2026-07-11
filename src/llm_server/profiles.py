@@ -130,6 +130,10 @@ def plan_apply(lock: Lockfile, services: list[Service]) -> ApplyPlan:
         current.repository != lock.resolved_model.repository
         or current.port != desired.port
         or current.max_kv_size != desired.max_kv_size
+        or current.revision != lock.resolved_model.revision
+        or not current.offline
+        or current.provenance != "locked-and-cached"
+        or not current.snapshot_path
     ):
         return ApplyPlan(
             action="conflict",

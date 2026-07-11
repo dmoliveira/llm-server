@@ -103,7 +103,9 @@ def test_restart_preserves_kv_setting(tmp_path: Path) -> None:
         patch.object(subject, "start", return_value=service) as start,
     ):
         subject.restart("safe")
-    start.assert_called_once_with("model", "safe", 8080, 4096)
+    start.assert_called_once_with(
+        "model", "safe", 8080, 4096, revision=None, snapshot_path=None, offline=False
+    )
 
 
 @patch.object(ServiceManager, "_owned", return_value=False)

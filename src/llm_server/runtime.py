@@ -346,7 +346,15 @@ class ServiceManager:
     def restart(self, name: str) -> Service:
         service = self.get(name)
         self.stop(name, observed=service)
-        return self.start(service.repository, name, service.port, service.max_kv_size)
+        return self.start(
+            service.repository,
+            name,
+            service.port,
+            service.max_kv_size,
+            revision=service.revision,
+            snapshot_path=Path(service.snapshot_path) if service.snapshot_path else None,
+            offline=service.offline,
+        )
 
     def logs(self, name: str, lines: int = 80) -> str:
         if not 1 <= lines <= 500:
