@@ -2,7 +2,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from typer.testing import CliRunner
 
+from llm_server.__main__ import app
 from llm_server.profiles import Profile, load_profile, resolve_lock, write_lock
 
 
@@ -47,3 +49,11 @@ def test_lock_rejects_a_non_commit_revision() -> None:
 
     with pytest.raises(ValueError, match="valid immutable revision"):
         resolve_lock(profile(), Api())
+
+
+def test_profile_validate_cli_path(tmp_path: Path) -> None:
+    path = tmp_path / "profile.json"
+    path.write_text(profile().model_dump_json())
+    result = CliRunner().invoke(app, ["profiles", "validate", str(path)])
+    assert result.exit_code == 0
+    assert "Valid profile" in result.output
