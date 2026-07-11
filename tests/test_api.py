@@ -10,6 +10,7 @@ def test_health_and_catalog_are_available() -> None:
     assert client.get("/health").json()["status"] == "ok"
     models = client.get("/api/v1/models/catalog").json()["models"]
     assert any(model["alias"] == "qwen3-8b" for model in models)
+    assert models[0]["capability_confidence"] == "declared"
 
 
 def test_invalid_service_name_is_rejected() -> None:

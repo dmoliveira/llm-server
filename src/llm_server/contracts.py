@@ -66,6 +66,10 @@ class CatalogModelResponse(BaseModel):
     quantization: str
     context: str
     note: str
+    modalities: str = "text"
+    tool_calling: str = "unknown"
+    structured_output: str = "unknown"
+    capability_confidence: str = "declared"
 
 
 class DownloadedModelResponse(BaseModel):
