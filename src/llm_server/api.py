@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from . import __version__
+from .capacity import CapacityPlan, plan_capacity
 from .catalog import cached_models, models, search
 from .contracts import (
     CatalogResponse,
@@ -108,6 +109,15 @@ def health() -> HealthResponse:
 def host() -> HostFacts:
     """Return local machine facts used by capacity planning; no remote telemetry is emitted."""
     return host_facts()
+
+
+@app.get("/api/v1/capacity", response_model=CapacityPlan)
+def capacity(
+    model_bytes: int | None = Query(default=None, ge=0),
+    max_kv_size: int | None = Query(default=None, ge=0),
+) -> CapacityPlan:
+    """Return a conservative local unified-memory recommendation without starting a service."""
+    return plan_capacity(host_facts().memory_bytes, model_bytes, max_kv_size)
 
 
 @app.get("/api/v1/models/catalog", response_model=CatalogResponse)
