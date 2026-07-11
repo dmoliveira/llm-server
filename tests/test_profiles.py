@@ -78,7 +78,7 @@ def test_lock_can_be_loaded_and_diffed_offline(tmp_path: Path) -> None:
     path = tmp_path / "lock.json"
     write_lock(lock, path)
     assert load_lock(path).resolved_model.revision == "b" * 40
-    assert diff_profile(profile(), load_lock(path))
+    assert diff_profile(profile(), load_lock(path)) == []
 
 
 def test_acquire_uses_the_locked_immutable_revision(monkeypatch, tmp_path: Path) -> None:
