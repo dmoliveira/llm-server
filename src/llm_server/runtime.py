@@ -13,6 +13,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from collections import deque
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -295,8 +296,7 @@ class ServiceManager:
         path = (logs_root / service.log_file).resolve()
         if logs_root not in path.parents:
             raise RuntimeError("Service log path is outside the managed logs directory")
-        return (
-            "No log entries yet."
-            if not path.exists()
-            else "\n".join(path.read_text(errors="replace").splitlines()[-lines:])
-        )
+        if not path.exists():
+            return "No log entries yet."
+        with path.open(errors="replace") as log:
+            return "".join(deque(log, maxlen=lines)).rstrip()

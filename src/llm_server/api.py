@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from html import escape
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
@@ -35,7 +37,8 @@ def safe(action):
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 def dashboard() -> str:
     rows = "".join(
-        f"<tr><td>{s.name}</td><td>{s.repository}</td><td><b>{s.status}</b></td><td>{s.port}</td></tr>"
+        f"<tr><td>{escape(s.name)}</td><td>{escape(s.repository)}</td>"
+        f"<td><b>{escape(s.status)}</b></td><td>{s.port}</td></tr>"
         for s in manager.list()
     ) or (
         "<tr><td colspan=4>No managed services. Start one from the CLI or "

@@ -1,6 +1,8 @@
 from fastapi.testclient import TestClient
 
+import llm_server.api as api
 from llm_server.api import app
+from llm_server.runtime import Service
 
 
 def test_health_and_catalog_are_available() -> None:
@@ -27,3 +29,22 @@ def test_log_tail_query_is_bounded() -> None:
 def test_unknown_service_is_not_found() -> None:
     client = TestClient(app)
     assert client.post("/api/v1/services/missing/stop").status_code == 404
+
+
+def test_dashboard_escapes_service_metadata(monkeypatch) -> None:
+    monkeypatch.setattr(
+        api.manager,
+        "list",
+        lambda: [
+            Service(
+                name="safe",
+                repository='<script>alert("x")</script>',
+                port=8080,
+                created_at=1,
+                log_file="safe.log",
+            )
+        ],
+    )
+    response = TestClient(app).get("/")
+    assert "<script>" not in response.text
+    assert "&lt;script&gt;" in response.text

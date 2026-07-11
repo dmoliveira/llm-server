@@ -21,8 +21,10 @@ export LLM_SERVER_LIMIT := $(value LIMIT)
 # explicit SERVICE value so it cannot be re-expanded as Make syntax.
 ifeq ($(origin SERVICE), file)
 export LLM_SERVER_SERVICE := $(value MODEL)
+export LLM_SERVER_SERVICE_IS_DEFAULT := 1
 else
 export LLM_SERVER_SERVICE := $(value SERVICE)
+export LLM_SERVER_SERVICE_IS_DEFAULT := 0
 endif
 
 ##@ Help
@@ -62,7 +64,7 @@ models-delete: ## Delete cached MODEL alias/repository (MODEL=qwen3-8b).
 ##@ Services
 .PHONY: start stop restart status logs
 start: ## Start MODEL as SERVICE on MODEL_PORT (optional MAX_KV_SIZE=4096).
-	@if [ -n "$${LLM_SERVER_MAX_KV_SIZE}" ]; then uv run python -m llm_server services start "$${LLM_SERVER_MODEL}" --name "$${LLM_SERVER_SERVICE}" --port "$${LLM_SERVER_MODEL_PORT}" --max-kv-size "$${LLM_SERVER_MAX_KV_SIZE}"; else uv run python -m llm_server services start "$${LLM_SERVER_MODEL}" --name "$${LLM_SERVER_SERVICE}" --port "$${LLM_SERVER_MODEL_PORT}"; fi
+	@service="$${LLM_SERVER_SERVICE}"; if [ "$${LLM_SERVER_SERVICE_IS_DEFAULT}" = 1 ]; then service=$$(printf '%s' "$${LLM_SERVER_MODEL}" | sed 's|/|--|g'); fi; if [ -n "$${LLM_SERVER_MAX_KV_SIZE}" ]; then uv run python -m llm_server services start "$${LLM_SERVER_MODEL}" --name "$$service" --port "$${LLM_SERVER_MODEL_PORT}" --max-kv-size "$${LLM_SERVER_MAX_KV_SIZE}"; else uv run python -m llm_server services start "$${LLM_SERVER_MODEL}" --name "$$service" --port "$${LLM_SERVER_MODEL_PORT}"; fi
 stop: ## Stop SERVICE cleanly (SERVICE=qwen3-8b).
 	uv run python -m llm_server services stop "$${LLM_SERVER_SERVICE}"
 restart: ## Restart SERVICE with its saved settings.
