@@ -24,18 +24,21 @@ def acquire_locked_snapshot(lock: Lockfile, cache_dir: Path | None = None) -> Pa
 
 
 def snapshot_digest(snapshot: Path) -> str:
-    """Hash snapshot entries deterministically without following cache symlinks."""
+    """Hash snapshot entries, including HF cache symlink target bytes under one model cache root."""
     root = snapshot.resolve()
     if not root.is_dir():
         raise ValueError(f"Snapshot path does not exist: {snapshot}")
+    model_cache_root = root.parent.parent
     digest = sha256()
     for path in sorted(root.rglob("*")):
         relative = path.relative_to(root).as_posix().encode()
         digest.update(relative)
         digest.update(b"\0")
         if path.is_symlink():
-            digest.update(b"symlink\0")
-            digest.update(path.readlink().as_posix().encode())
+            resolved = path.resolve()
+            if model_cache_root not in resolved.parents or not resolved.is_file():
+                raise ValueError(f"Snapshot contains an unsafe file link: {path}")
+            digest.update(resolved.read_bytes())
             continue
         if not path.is_file():
             continue

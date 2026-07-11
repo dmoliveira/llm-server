@@ -105,6 +105,20 @@ def test_snapshot_digest_is_deterministic_and_confined(tmp_path: Path) -> None:
     assert snapshot_digest(snapshot) == snapshot_digest(snapshot)
 
 
+def test_snapshot_digest_hashes_hf_style_symlink_contents(tmp_path: Path) -> None:
+    model_root = tmp_path / "models--example"
+    snapshot = model_root / "snapshots" / "commit"
+    blobs = model_root / "blobs"
+    snapshot.mkdir(parents=True)
+    blobs.mkdir()
+    blob = blobs / "weights"
+    blob.write_bytes(b"first")
+    (snapshot / "weights.safetensors").symlink_to(Path("../../blobs/weights"))
+    first = snapshot_digest(snapshot)
+    blob.write_bytes(b"second")
+    assert snapshot_digest(snapshot) != first
+
+
 def test_profile_apply_is_dry_run_without_yes(monkeypatch, tmp_path: Path) -> None:
     lock = resolve_lock(
         profile(),
