@@ -47,6 +47,10 @@ class ServiceResponse(BaseModel):
     max_kv_size: int | None = None
     process_identity: str | None = None
     error: str | None = None
+    revision: str | None = None
+    snapshot_path: str | None = None
+    offline: bool = False
+    provenance: str = "unlocked"
 
 
 class LogsResponse(BaseModel):

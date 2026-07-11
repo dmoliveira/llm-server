@@ -176,6 +176,7 @@ def test_offline_start_uses_a_local_snapshot_and_disables_hub_network(
     assert popen.call_args.args[0][2:4] == [str(snapshot), "--host"]
     assert popen.call_args.kwargs["env"]["HF_HUB_OFFLINE"] == "1"
     assert service.snapshot_path == str(snapshot)
+    assert service.provenance == "locked-and-cached"
 
 
 def test_logs_reject_a_path_outside_the_managed_directory(tmp_path: Path) -> None:

@@ -38,6 +38,7 @@ class Service(BaseModel):
     revision: str | None = None
     snapshot_path: str | None = None
     offline: bool = False
+    provenance: str = "unlocked"
 
 
 class StateCorruptError(RuntimeError):
@@ -234,6 +235,13 @@ class ServiceManager:
                 revision=revision,
                 snapshot_path=str(snapshot_path) if snapshot_path else None,
                 offline=offline,
+                provenance=(
+                    "locked-and-cached"
+                    if offline and snapshot_path
+                    else "revision-unverified"
+                    if revision
+                    else "unlocked"
+                ),
             )
             services[name] = service
             self._write(services)
