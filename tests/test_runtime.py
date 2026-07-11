@@ -104,3 +104,42 @@ def test_restart_preserves_kv_setting(tmp_path: Path) -> None:
     ):
         subject.restart("safe")
     start.assert_called_once_with("model", "safe", 8080, 4096)
+
+
+@patch.object(ServiceManager, "_owned", return_value=False)
+def test_list_reconciles_reused_or_unowned_pid(_: MagicMock, tmp_path: Path) -> None:
+    subject = manager(tmp_path)
+    subject._write(
+        {
+            "safe": Service(
+                name="safe",
+                repository="model",
+                port=8080,
+                pid=123,
+                status="ready",
+                created_at=1,
+                log_file="safe.log",
+                process_identity="old",
+            )
+        }
+    )
+    service = subject.list()[0]
+    assert (service.status, service.pid, service.process_identity) == ("stopped", None, None)
+
+
+def test_readiness_compare_and_set_refuses_replacement(tmp_path: Path) -> None:
+    subject = manager(tmp_path)
+    original = Service(
+        name="safe",
+        repository="model",
+        port=8080,
+        pid=123,
+        created_at=1,
+        log_file="safe.log",
+        process_identity="old",
+    )
+    replacement = original.model_copy(update={"pid": 456, "process_identity": "new"})
+    subject._write({"safe": replacement})
+    with pytest.raises(RuntimeError, match="changed concurrently"):
+        subject._set("safe", "ready", observed=original)
+    assert subject._read()["safe"].pid == 456

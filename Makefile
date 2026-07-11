@@ -4,6 +4,7 @@ PORT ?= 8787
 MODEL ?= qwen3-8b
 SERVICE ?= $(MODEL)
 MODEL_PORT ?= 8080
+LIMIT ?= 10
 
 # Preserve caller input as raw exported values. Recipes consume shell variables so Make never
 # expands a user-supplied value as Make syntax before the Python CLI validates it.

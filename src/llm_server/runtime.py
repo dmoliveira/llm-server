@@ -99,17 +99,23 @@ class ServiceManager:
             and (service.process_identity == self._identity(service.pid))
         )
 
+    @staticmethod
+    def _matches(current: Service, observed: Service) -> bool:
+        """Prevent a late lifecycle operation from overwriting a replacement process."""
+        return current.pid == observed.pid and current.process_identity == observed.process_identity
+
     def list(self) -> list[Service]:
         with self._locked():
             services, changed = self._read(), False
             for service in services.values():
-                if service.status in {"ready", "starting"} and not self._alive(service.pid):
+                if service.status in {"ready", "starting", "stopping"} and not self._owned(service):
                     service.status, service.error, service.pid, changed = (
                         "stopped",
                         "Process is not running",
                         None,
                         True,
                     )
+                    service.process_identity = None
             if changed:
                 self._write(services)
             return list(services.values())
@@ -121,9 +127,9 @@ class ServiceManager:
             raise ValueError("Service names may contain letters, numbers, hyphens, and underscores")
         with self._locked():
             services = self._read()
-            if name in services and self._alive(services[name].pid):
+            if name in services and self._owned(services[name]):
                 raise ValueError(f"Service {name!r} is already running")
-            if any(item.port == port and self._alive(item.pid) for item in services.values()):
+            if any(item.port == port and self._owned(item) for item in services.values()):
                 raise ValueError(f"Port {port} is already managed by a running service")
             model = resolve(identifier)
             self.logs_dir.mkdir(parents=True, exist_ok=True)
@@ -159,35 +165,64 @@ class ServiceManager:
             raise ValueError(f"Unknown service {name!r}")
         return services[name]
 
-    def _set(self, name: str, status: str, error: str | None = None) -> Service:
+    def _set(
+        self,
+        name: str,
+        status: str,
+        error: str | None = None,
+        observed: Service | None = None,
+    ) -> Service:
         with self._locked():
             services = self._read()
+            if observed and not self._matches(services[name], observed):
+                raise RuntimeError("Service state changed concurrently; retry the operation")
             services[name].status, services[name].error = status, error
             if status == "failed":
                 services[name].pid = None
+                services[name].process_identity = None
             self._write(services)
             return services[name]
 
     def mark_ready(self, name: str, timeout: float = 30) -> Service:
+        service = self.get(name)
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            service = self.get(name)
-            if not self._alive(service.pid):
-                return self._set(name, "failed", "MLX-LM exited before becoming ready")
+            if not self._owned(service):
+                return self._set(
+                    name, "failed", "MLX-LM exited before becoming ready", observed=service
+                )
             try:
                 with urllib.request.urlopen(
                     f"http://127.0.0.1:{service.port}/v1/models", timeout=1
                 ):
-                    return self._set(name, "ready")
+                    return self._set(name, "ready", observed=service)
             except (urllib.error.URLError, TimeoutError):
                 time.sleep(0.25)
-        self.stop(name)
-        return self._set(name, "failed", f"Timed out waiting {timeout}s for /v1/models")
+        return self.stop(
+            name,
+            observed=service,
+            final_status="failed",
+            final_error=f"Timed out waiting {timeout}s for /v1/models",
+        )
 
-    def stop(self, name: str, timeout: float = 10) -> Service:
-        service = self.get(name)
+    def stop(
+        self,
+        name: str,
+        timeout: float = 10,
+        observed: Service | None = None,
+        final_status: str = "stopped",
+        final_error: str | None = None,
+    ) -> Service:
+        service = observed or self.get(name)
         if self._alive(service.pid) and not self._owned(service):
             raise RuntimeError("Refusing to signal an unverified process; inspect its PID and logs")
+        with self._locked():
+            services = self._read()
+            current = services.get(name)
+            if current is None or not self._matches(current, service):
+                raise RuntimeError("Service state changed concurrently; retry the operation")
+            current.status = "stopping"
+            self._write(services)
         if self._owned(service):
             os.killpg(service.pid, signal.SIGTERM)
             deadline = time.monotonic() + timeout
@@ -197,7 +232,14 @@ class ServiceManager:
                 os.killpg(service.pid, signal.SIGKILL)
         with self._locked():
             services = self._read()
-            services[name].status, services[name].pid, services[name].error = "stopped", None, None
+            current = services.get(name)
+            if current is None or not self._matches(current, service):
+                return current if current is not None else service
+            services[name].status, services[name].pid, services[name].error = (
+                final_status,
+                None,
+                final_error,
+            )
             services[name].process_identity = None
             self._write(services)
             return services[name]
