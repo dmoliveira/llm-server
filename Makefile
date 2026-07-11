@@ -8,6 +8,7 @@ MAX_KV_SIZE ?=
 LIMIT ?= 10
 PROFILE ?= profile.json
 LOCKFILE ?= llm-server.lock.json
+YES ?= 0
 
 # Preserve caller input as raw exported values. Recipes consume shell variables so Make never
 # expands a user-supplied value as Make syntax before the Python CLI validates it.
@@ -20,6 +21,7 @@ export LLM_SERVER_QUERY := $(value QUERY)
 export LLM_SERVER_LIMIT := $(value LIMIT)
 export LLM_SERVER_PROFILE := $(value PROFILE)
 export LLM_SERVER_LOCKFILE := $(value LOCKFILE)
+export LLM_SERVER_YES := $(value YES)
 
 # SERVICE defaults to MODEL. Keep the derived default concrete while preserving a caller's raw
 # explicit SERVICE value so it cannot be re-expanded as Make syntax.
@@ -72,6 +74,8 @@ profiles-inspect: ## Inspect LOCKFILE locally without a network request.
 	uv run python -m llm_server profiles inspect "$${LLM_SERVER_LOCKFILE}"
 profiles-diff: ## Compare PROFILE intent with LOCKFILE (non-zero when different).
 	uv run python -m llm_server profiles diff "$${LLM_SERVER_PROFILE}" --lockfile "$${LLM_SERVER_LOCKFILE}"
+profiles-apply: ## Preview LOCKFILE apply; set YES=1 to acquire and start offline.
+	@if [ "$${LLM_SERVER_YES}" = 1 ]; then uv run python -m llm_server profiles apply "$${LLM_SERVER_LOCKFILE}" --yes; else uv run python -m llm_server profiles apply "$${LLM_SERVER_LOCKFILE}"; fi
 
 ##@ Services
 .PHONY: start stop restart status logs

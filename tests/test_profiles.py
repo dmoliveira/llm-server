@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 from typer.testing import CliRunner
 
+import llm_server.__main__ as cli
 from llm_server.__main__ import app
 from llm_server.profiles import (
     Profile,
@@ -93,3 +94,21 @@ def test_acquire_uses_the_locked_immutable_revision(monkeypatch, tmp_path: Path)
     monkeypatch.setattr("llm_server.provenance.snapshot_download", fake_download)
     assert acquire_locked_snapshot(lock, tmp_path) == tmp_path / "snapshot"
     assert captured["revision"] == "d" * 40
+
+
+def test_profile_apply_is_dry_run_without_yes(monkeypatch, tmp_path: Path) -> None:
+    lock = resolve_lock(
+        profile(),
+        type("Api", (), {"model_info": lambda *_args, **_kwargs: SimpleNamespace(sha="e" * 40)})(),
+    )
+    lockfile = tmp_path / "lock.json"
+    write_lock(lock, lockfile)
+
+    class Manager:
+        def list(self):
+            return []
+
+    monkeypatch.setattr(cli, "manager", Manager())
+    result = CliRunner().invoke(app, ["profiles", "apply", "--lockfile", str(lockfile)])
+    assert result.exit_code == 0
+    assert "Re-run with --yes" in result.output
