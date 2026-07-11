@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from hashlib import sha256
 from pathlib import Path
 
 from huggingface_hub import HfApi
@@ -28,6 +29,7 @@ class Lockfile(BaseModel):
     profile_schema_version: int
     service: ServiceSpec
     resolved_model: ModelRef
+    profile_digest: str
 
 
 class ApplyPlan(BaseModel):
@@ -64,6 +66,11 @@ def resolve_lock(profile: Profile, api: HfApi | None = None) -> Lockfile:
             update={"model": ModelRef(repository=repository, revision=revision)}
         ),
         resolved_model=ModelRef(repository=repository, revision=revision),
+        profile_digest=sha256(
+            json.dumps(
+                profile.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+            ).encode()
+        ).hexdigest(),
     )
 
 

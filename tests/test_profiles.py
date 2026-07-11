@@ -39,6 +39,7 @@ def test_lock_resolves_an_alias_to_an_immutable_revision(tmp_path: Path) -> None
 
     lock = resolve_lock(profile(), Api())
     assert lock.resolved_model.revision == "a" * 40
+    assert len(lock.profile_digest) == 64
     output = tmp_path / "lock.json"
     write_lock(lock, output)
     assert '"schema_version": 1' in output.read_text()
