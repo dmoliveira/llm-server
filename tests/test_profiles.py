@@ -14,7 +14,7 @@ from llm_server.profiles import (
     resolve_lock,
     write_lock,
 )
-from llm_server.provenance import acquire_locked_snapshot
+from llm_server.provenance import acquire_locked_snapshot, snapshot_digest
 
 
 def profile() -> Profile:
@@ -61,6 +61,22 @@ def test_lock_rejects_a_non_commit_revision() -> None:
         resolve_lock(profile(), Api())
 
 
+def test_lock_rejects_invalid_snapshot_digest() -> None:
+    with pytest.raises(ValueError):
+        profile().model_copy()  # Ensure profile fixtures remain independent from lock validation.
+        from llm_server.profiles import Lockfile
+
+        Lockfile.model_validate(
+            {
+                "profile_schema_version": 1,
+                "service": profile().model_dump()["service"],
+                "resolved_model": {"repository": "repo", "revision": "a" * 40},
+                "profile_digest": "b" * 64,
+                "snapshot_digest": "",
+            }
+        )
+
+
 def test_profile_validate_cli_path(tmp_path: Path) -> None:
     path = tmp_path / "profile.json"
     path.write_text(profile().model_dump_json())
@@ -95,6 +111,28 @@ def test_acquire_uses_the_locked_immutable_revision(monkeypatch, tmp_path: Path)
     monkeypatch.setattr("llm_server.provenance.snapshot_download", fake_download)
     assert acquire_locked_snapshot(lock, tmp_path) == tmp_path / "snapshot"
     assert captured["revision"] == "d" * 40
+
+
+def test_snapshot_digest_is_deterministic_and_confined(tmp_path: Path) -> None:
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    (snapshot / "config.json").write_text("{}")
+    (snapshot / "weights.safetensors").write_bytes(b"weights")
+    assert snapshot_digest(snapshot) == snapshot_digest(snapshot)
+
+
+def test_snapshot_digest_hashes_hf_style_symlink_contents(tmp_path: Path) -> None:
+    model_root = tmp_path / "models--example"
+    snapshot = model_root / "snapshots" / "commit"
+    blobs = model_root / "blobs"
+    snapshot.mkdir(parents=True)
+    blobs.mkdir()
+    blob = blobs / "weights"
+    blob.write_bytes(b"first")
+    (snapshot / "weights.safetensors").symlink_to(Path("../../blobs/weights"))
+    first = snapshot_digest(snapshot)
+    blob.write_bytes(b"second")
+    assert snapshot_digest(snapshot) != first
 
 
 def test_profile_apply_is_dry_run_without_yes(monkeypatch, tmp_path: Path) -> None:

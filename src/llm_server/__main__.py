@@ -11,7 +11,7 @@ from rich.table import Table
 
 from .catalog import cached_models, delete, download, models, search
 from .profiles import diff_profile, load_lock, load_profile, plan_apply, resolve_lock, write_lock
-from .provenance import acquire_locked_snapshot
+from .provenance import acquire_locked_snapshot, snapshot_digest
 from .runtime import ServiceManager
 
 app = typer.Typer(
@@ -135,6 +135,12 @@ def profile_apply(lockfile: Path = DEFAULT_LOCK_FILE, yes: bool = False) -> None
         console.print(f"[green]✓ UNCHANGED[/green] {plan.service}")
         return
     snapshot = acquire_locked_snapshot(lock)
+    digest = snapshot_digest(snapshot)
+    if lock.snapshot_digest is not None and lock.snapshot_digest != digest:
+        raise typer.BadParameter("Locked snapshot digest does not match cached model content")
+    if lock.snapshot_digest is None:
+        lock = lock.model_copy(update={"snapshot_digest": digest})
+        write_lock(lock, lockfile)
     service = manager.start(
         lock.resolved_model.repository,
         lock.service.name,

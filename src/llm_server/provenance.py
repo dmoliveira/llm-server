@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from hashlib import sha256
 from pathlib import Path
 
 from huggingface_hub import snapshot_download
@@ -20,3 +21,26 @@ def acquire_locked_snapshot(lock: Lockfile, cache_dir: Path | None = None) -> Pa
         cache_dir=cache_dir,
     )
     return Path(snapshot)
+
+
+def snapshot_digest(snapshot: Path) -> str:
+    """Hash snapshot entries, including HF cache symlink target bytes under one model cache root."""
+    root = snapshot.resolve()
+    if not root.is_dir():
+        raise ValueError(f"Snapshot path does not exist: {snapshot}")
+    model_cache_root = root.parent.parent
+    digest = sha256()
+    for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root).as_posix().encode()
+        digest.update(relative)
+        digest.update(b"\0")
+        if path.is_symlink():
+            resolved = path.resolve()
+            if model_cache_root not in resolved.parents or not resolved.is_file():
+                raise ValueError(f"Snapshot contains an unsafe file link: {path}")
+            digest.update(resolved.read_bytes())
+            continue
+        if not path.is_file():
+            continue
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
