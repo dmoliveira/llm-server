@@ -30,6 +30,7 @@ class Lockfile(BaseModel):
     service: ServiceSpec
     resolved_model: ModelRef
     profile_digest: str
+    snapshot_digest: str | None = None
 
 
 class ApplyPlan(BaseModel):
