@@ -98,3 +98,16 @@ def test_corrupt_versioned_state_has_the_same_server_error_contract(tmp_path) ->
         assert response.json() == {"detail": "Service state is corrupt"}
     finally:
         app.dependency_overrides.clear()
+
+
+def test_future_state_schema_has_the_same_server_error_contract(tmp_path) -> None:
+    isolated_manager = ServiceManager(tmp_path / "state")
+    isolated_manager.data_dir.mkdir(parents=True)
+    isolated_manager.state_file.write_text('{"schema_version": 999, "services": {}}')
+    app.dependency_overrides[get_manager] = lambda: isolated_manager
+    try:
+        response = TestClient(app).get("/api/v1/status")
+        assert response.status_code == 500
+        assert response.json() == {"detail": "Service state is corrupt"}
+    finally:
+        app.dependency_overrides.clear()

@@ -73,7 +73,7 @@ class ServiceManager:
                 raise ValueError("Service state must be a JSON object")
             if "schema_version" in raw:
                 if raw["schema_version"] != STATE_SCHEMA_VERSION:
-                    raise RuntimeError(
+                    raise StateCorruptError(
                         f"Unsupported service state schema version: {raw['schema_version']}"
                     )
                 raw = raw.get("services")
