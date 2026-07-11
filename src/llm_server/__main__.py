@@ -136,7 +136,7 @@ def profile_apply(lockfile: Path = DEFAULT_LOCK_FILE, yes: bool = False) -> None
         return
     snapshot = acquire_locked_snapshot(lock)
     digest = snapshot_digest(snapshot)
-    if lock.snapshot_digest and lock.snapshot_digest != digest:
+    if lock.snapshot_digest is not None and lock.snapshot_digest != digest:
         raise typer.BadParameter("Locked snapshot digest does not match cached model content")
     if lock.snapshot_digest is None:
         lock = lock.model_copy(update={"snapshot_digest": digest})

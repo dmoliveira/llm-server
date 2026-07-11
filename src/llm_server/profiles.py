@@ -30,7 +30,7 @@ class Lockfile(BaseModel):
     service: ServiceSpec
     resolved_model: ModelRef
     profile_digest: str
-    snapshot_digest: str | None = None
+    snapshot_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 class ApplyPlan(BaseModel):

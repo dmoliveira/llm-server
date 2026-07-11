@@ -61,6 +61,22 @@ def test_lock_rejects_a_non_commit_revision() -> None:
         resolve_lock(profile(), Api())
 
 
+def test_lock_rejects_invalid_snapshot_digest() -> None:
+    with pytest.raises(ValueError):
+        profile().model_copy()  # Ensure profile fixtures remain independent from lock validation.
+        from llm_server.profiles import Lockfile
+
+        Lockfile.model_validate(
+            {
+                "profile_schema_version": 1,
+                "service": profile().model_dump()["service"],
+                "resolved_model": {"repository": "repo", "revision": "a" * 40},
+                "profile_digest": "b" * 64,
+                "snapshot_digest": "",
+            }
+        )
+
+
 def test_profile_validate_cli_path(tmp_path: Path) -> None:
     path = tmp_path / "profile.json"
     path.write_text(profile().model_dump_json())
