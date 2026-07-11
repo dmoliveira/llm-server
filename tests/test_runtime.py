@@ -177,3 +177,41 @@ def test_logs_reject_a_path_outside_the_managed_directory(tmp_path: Path) -> Non
     )
     with pytest.raises(RuntimeError, match="outside"):
         subject.logs("safe")
+
+
+def test_state_reader_accepts_versioned_envelope_and_rejects_future_schema(tmp_path: Path) -> None:
+    subject = manager(tmp_path)
+    subject.data_dir.mkdir(parents=True)
+    subject.state_file.write_text(
+        '{"schema_version": 1, "services": {"safe": {"name": "safe", '
+        '"repository": "model", "port": 8080, "created_at": 1, "log_file": "safe.log"}}}'
+    )
+    assert subject._read()["safe"].repository == "model"
+    subject.state_file.write_text('{"schema_version": 999, "services": {}}')
+    with pytest.raises(RuntimeError, match="Unsupported service state schema"):
+        subject._read()
+
+
+def test_state_writer_emits_versioned_envelope_and_rejects_non_object_json(tmp_path: Path) -> None:
+    subject = manager(tmp_path)
+    subject._write(
+        {
+            "safe": Service(
+                name="safe", repository="model", port=8080, created_at=1, log_file="safe.log"
+            )
+        }
+    )
+    raw = subject.state_file.read_text()
+    assert '"schema_version": 1' in raw
+    assert '"services"' in raw
+    subject.state_file.write_text("[]")
+    with pytest.raises(RuntimeError, match="Service state is corrupt"):
+        subject._read()
+
+
+def test_state_reader_rejects_malformed_service_entry(tmp_path: Path) -> None:
+    subject = manager(tmp_path)
+    subject.data_dir.mkdir(parents=True)
+    subject.state_file.write_text('{"broken": {"name": "broken", "port": "not-a-port"}}')
+    with pytest.raises(RuntimeError, match="Service state is corrupt"):
+        subject._read()

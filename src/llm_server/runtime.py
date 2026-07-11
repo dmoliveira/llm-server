@@ -18,9 +18,10 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from .catalog import resolve
+from .contracts import STATE_SCHEMA_VERSION
 
 
 class Service(BaseModel):
@@ -34,6 +35,10 @@ class Service(BaseModel):
     max_kv_size: int | None = None
     process_identity: str | None = None
     error: str | None = None
+
+
+class StateCorruptError(RuntimeError):
+    """Persisted state cannot safely be used by a control-plane operation."""
 
 
 class ServiceManager:
@@ -59,18 +64,34 @@ class ServiceManager:
         if not self.state_file.exists():
             return {}
         try:
-            return {
-                name: Service.model_validate(item)
-                for name, item in json.loads(self.state_file.read_text()).items()
-            }
-        except (json.JSONDecodeError, ValueError) as error:
-            raise RuntimeError(f"Service state is corrupt: {self.state_file}") from error
+            raw = json.loads(self.state_file.read_text())
+            if not isinstance(raw, dict):
+                raise ValueError("Service state must be a JSON object")
+            if "schema_version" in raw:
+                if raw["schema_version"] != STATE_SCHEMA_VERSION:
+                    raise RuntimeError(
+                        f"Unsupported service state schema version: {raw['schema_version']}"
+                    )
+                raw = raw.get("services")
+                if not isinstance(raw, dict):
+                    raise StateCorruptError(
+                        "Versioned service state is missing its services mapping"
+                    )
+            return {name: Service.model_validate(item) for name, item in raw.items()}
+        except (json.JSONDecodeError, TypeError, ValidationError, ValueError) as error:
+            raise StateCorruptError(f"Service state is corrupt: {self.state_file}") from error
 
     def _write(self, services: dict[str, Service]) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         temporary = self.state_file.with_suffix(".tmp")
         temporary.write_text(
-            json.dumps({name: item.model_dump() for name, item in services.items()}, indent=2)
+            json.dumps(
+                {
+                    "schema_version": STATE_SCHEMA_VERSION,
+                    "services": {name: item.model_dump() for name, item in services.items()},
+                },
+                indent=2,
+            )
         )
         os.replace(temporary, self.state_file)
 
