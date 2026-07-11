@@ -4,6 +4,7 @@ PORT ?= 8787
 MODEL ?= qwen3-8b
 SERVICE ?= $(MODEL)
 MODEL_PORT ?= 8080
+MODEL_BYTES ?= 0
 MAX_KV_SIZE ?=
 LIMIT ?= 10
 PROFILE ?= profile.json
@@ -16,6 +17,7 @@ export LLM_SERVER_HOST := $(value HOST)
 export LLM_SERVER_PORT := $(value PORT)
 export LLM_SERVER_MODEL := $(value MODEL)
 export LLM_SERVER_MODEL_PORT := $(value MODEL_PORT)
+export LLM_SERVER_MODEL_BYTES := $(value MODEL_BYTES)
 export LLM_SERVER_MAX_KV_SIZE := $(value MAX_KV_SIZE)
 export LLM_SERVER_QUERY := $(value QUERY)
 export LLM_SERVER_LIMIT := $(value LIMIT)
@@ -55,6 +57,8 @@ serve: ## Start the local control-plane API (HOST=127.0.0.1 PORT=8787).
 	uv run python -m llm_server serve --host "$${LLM_SERVER_HOST}" --port "$${LLM_SERVER_PORT}"
 dev: ## Start the API with auto-reload for development.
 	uv run uvicorn llm_server.api:app --host 127.0.0.1 --port "$${LLM_SERVER_PORT}" --reload
+capacity: ## Estimate capacity (MODEL_BYTES=8000000000 MAX_KV_SIZE=4096).
+	uv run python -m llm_server capacity --model-bytes "$${MODEL_BYTES}" --max-kv-size "$${MAX_KV_SIZE}"
 
 ##@ Models
 .PHONY: models models-search models-download models-delete
