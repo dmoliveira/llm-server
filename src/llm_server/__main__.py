@@ -2,21 +2,27 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
 import uvicorn
 from rich.console import Console
 from rich.table import Table
 
 from .catalog import cached_models, delete, download, models, search
+from .profiles import load_profile, resolve_lock, write_lock
 from .runtime import ServiceManager
 
 app = typer.Typer(
     help="⚡ Manage local MLX language models on Apple Silicon.", no_args_is_help=True
 )
 models_app, services_app = typer.Typer(no_args_is_help=True), typer.Typer(no_args_is_help=True)
+profiles_app = typer.Typer(no_args_is_help=True)
 app.add_typer(models_app, name="models")
 app.add_typer(services_app, name="services")
+app.add_typer(profiles_app, name="profiles")
 console, manager = Console(), ServiceManager()
+DEFAULT_LOCK_FILE = Path("llm-server.lock.json")
 
 
 def show(items: list[dict], title: str) -> None:
@@ -63,6 +69,26 @@ def model_download(identifier: str, revision: str | None = None) -> None:
 def model_delete(identifier: str) -> None:
     delete(identifier)
     console.print(f"[green]✓ Deleted cached entry:[/green] {identifier}")
+
+
+@profiles_app.command("validate")
+def profile_validate(path: Path) -> None:
+    """Validate a single-service JSON profile without network access."""
+    profile = load_profile(path)
+    console.print(
+        f"[green]✓ Valid profile:[/green] {profile.service.name} → "
+        f"{profile.service.model.repository}"
+    )
+
+
+@profiles_app.command("lock")
+def profile_lock(path: Path, output: Path = DEFAULT_LOCK_FILE) -> None:
+    """Resolve a profile's model to an immutable Hub commit and write a lockfile."""
+    lock = resolve_lock(load_profile(path))
+    write_lock(lock, output)
+    console.print(
+        f"[green]✓ Locked[/green] {lock.resolved_model.repository}@{lock.resolved_model.revision}"
+    )
 
 
 @services_app.command("status")

@@ -1,0 +1,49 @@
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from llm_server.profiles import Profile, load_profile, resolve_lock, write_lock
+
+
+def profile() -> Profile:
+    return Profile.model_validate(
+        {
+            "schema_version": 1,
+            "service": {
+                "name": "writer",
+                "model": {"repository": "qwen3-8b"},
+                "port": 8080,
+                "max_kv_size": 4096,
+            },
+        }
+    )
+
+
+def test_lock_resolves_an_alias_to_an_immutable_revision(tmp_path: Path) -> None:
+    class Api:
+        def model_info(self, repository: str, revision: str | None = None):
+            assert (repository, revision) == ("mlx-community/Qwen3-8B-4bit", None)
+            return SimpleNamespace(sha="a" * 40)
+
+    lock = resolve_lock(profile(), Api())
+    assert lock.resolved_model.revision == "a" * 40
+    output = tmp_path / "lock.json"
+    write_lock(lock, output)
+    assert '"schema_version": 1' in output.read_text()
+
+
+def test_profile_loading_rejects_unknown_schema(tmp_path: Path) -> None:
+    path = tmp_path / "profile.json"
+    path.write_text('{"schema_version": 999, "service": {}}')
+    with pytest.raises(ValueError, match="Unsupported profile schema"):
+        load_profile(path)
+
+
+def test_lock_rejects_a_non_commit_revision() -> None:
+    class Api:
+        def model_info(self, *_args, **_kwargs):
+            return SimpleNamespace(sha="main")
+
+    with pytest.raises(ValueError, match="valid immutable revision"):
+        resolve_lock(profile(), Api())

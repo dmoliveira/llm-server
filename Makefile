@@ -6,6 +6,8 @@ SERVICE ?= $(MODEL)
 MODEL_PORT ?= 8080
 MAX_KV_SIZE ?=
 LIMIT ?= 10
+PROFILE ?= profile.json
+LOCKFILE ?= llm-server.lock.json
 
 # Preserve caller input as raw exported values. Recipes consume shell variables so Make never
 # expands a user-supplied value as Make syntax before the Python CLI validates it.
@@ -16,6 +18,8 @@ export LLM_SERVER_MODEL_PORT := $(value MODEL_PORT)
 export LLM_SERVER_MAX_KV_SIZE := $(value MAX_KV_SIZE)
 export LLM_SERVER_QUERY := $(value QUERY)
 export LLM_SERVER_LIMIT := $(value LIMIT)
+export LLM_SERVER_PROFILE := $(value PROFILE)
+export LLM_SERVER_LOCKFILE := $(value LOCKFILE)
 
 # SERVICE defaults to MODEL. Keep the derived default concrete while preserving a caller's raw
 # explicit SERVICE value so it cannot be re-expanded as Make syntax.
@@ -60,6 +64,10 @@ models-download: ## Download MODEL alias/repository (MODEL=qwen3-8b).
 	uv run python -m llm_server models download "$${LLM_SERVER_MODEL}"
 models-delete: ## Delete cached MODEL alias/repository (MODEL=qwen3-8b).
 	uv run python -m llm_server models delete "$${LLM_SERVER_MODEL}"
+profiles-validate: ## Validate PROFILE JSON without network access.
+	uv run python -m llm_server profiles validate "$${LLM_SERVER_PROFILE}"
+profiles-lock: ## Resolve PROFILE to LOCKFILE (PROFILE=profile.json LOCKFILE=llm-server.lock.json).
+	uv run python -m llm_server profiles lock "$${LLM_SERVER_PROFILE}" --output "$${LLM_SERVER_LOCKFILE}"
 
 ##@ Services
 .PHONY: start stop restart status logs
