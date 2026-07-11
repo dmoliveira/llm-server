@@ -114,7 +114,11 @@ def downloaded() -> DownloadedModelsResponse:
 
 
 @app.get("/api/v1/models/search", response_model=SearchModelsResponse, responses=ERROR_RESPONSES)
-def model_search(query: str, limit: int = Query(default=10, ge=1, le=50)) -> SearchModelsResponse:
+def model_search(
+    query: str = Query(min_length=1), limit: int = Query(default=10, ge=1, le=50)
+) -> SearchModelsResponse:
+    if not query.strip():
+        raise HTTPException(status_code=422, detail="Request validation failed")
     return safe(lambda: {"models": search(query, limit)})
 
 
