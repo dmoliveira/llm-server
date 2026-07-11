@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from huggingface_hub import HfApi, scan_cache_dir, snapshot_download
+from huggingface_hub import CacheNotFound, HfApi, scan_cache_dir, snapshot_download
 
 
 @dataclass(frozen=True)
@@ -18,6 +18,10 @@ class Model:
     quantization: str
     context: str
     note: str
+    modalities: str = "text"
+    tool_calling: str = "unknown"
+    structured_output: str = "unknown"
+    capability_confidence: str = "declared"
 
 
 CATALOG = (
@@ -121,7 +125,7 @@ def download(identifier: str, revision: str | None = None) -> str:
 def cached_models() -> list[dict[str, Any]]:
     try:
         cache = scan_cache_dir()
-    except Exception:
+    except CacheNotFound:
         return []
     return [
         {"repository": r.repo_id, "size_bytes": r.size_on_disk, "revisions": len(r.revisions)}

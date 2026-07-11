@@ -35,6 +35,9 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+[tool.ruff.lint.per-file-ignores]
+"src/llm_server/api.py" = ["B008"] # FastAPI dependency/query declarations are intentional defaults.
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

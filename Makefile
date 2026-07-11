@@ -4,16 +4,34 @@ PORT ?= 8787
 MODEL ?= qwen3-8b
 SERVICE ?= $(MODEL)
 MODEL_PORT ?= 8080
+MAX_KV_SIZE ?=
+LIMIT ?= 10
+PROFILE ?= profile.json
+LOCKFILE ?= llm-server.lock.json
+YES ?= 0
 
 # Preserve caller input as raw exported values. Recipes consume shell variables so Make never
 # expands a user-supplied value as Make syntax before the Python CLI validates it.
 export LLM_SERVER_HOST := $(value HOST)
 export LLM_SERVER_PORT := $(value PORT)
 export LLM_SERVER_MODEL := $(value MODEL)
-export LLM_SERVER_SERVICE := $(value SERVICE)
 export LLM_SERVER_MODEL_PORT := $(value MODEL_PORT)
+export LLM_SERVER_MAX_KV_SIZE := $(value MAX_KV_SIZE)
 export LLM_SERVER_QUERY := $(value QUERY)
 export LLM_SERVER_LIMIT := $(value LIMIT)
+export LLM_SERVER_PROFILE := $(value PROFILE)
+export LLM_SERVER_LOCKFILE := $(value LOCKFILE)
+export LLM_SERVER_YES := $(value YES)
+
+# SERVICE defaults to MODEL. Keep the derived default concrete while preserving a caller's raw
+# explicit SERVICE value so it cannot be re-expanded as Make syntax.
+ifeq ($(origin SERVICE), file)
+export LLM_SERVER_SERVICE := $(value MODEL)
+export LLM_SERVER_SERVICE_IS_DEFAULT := 1
+else
+export LLM_SERVER_SERVICE := $(value SERVICE)
+export LLM_SERVER_SERVICE_IS_DEFAULT := 0
+endif
 
 ##@ Help
 .PHONY: help
@@ -48,11 +66,21 @@ models-download: ## Download MODEL alias/repository (MODEL=qwen3-8b).
 	uv run python -m llm_server models download "$${LLM_SERVER_MODEL}"
 models-delete: ## Delete cached MODEL alias/repository (MODEL=qwen3-8b).
 	uv run python -m llm_server models delete "$${LLM_SERVER_MODEL}"
+profiles-validate: ## Validate PROFILE JSON without network access.
+	uv run python -m llm_server profiles validate "$${LLM_SERVER_PROFILE}"
+profiles-lock: ## Resolve PROFILE to LOCKFILE (PROFILE=profile.json LOCKFILE=llm-server.lock.json).
+	uv run python -m llm_server profiles lock "$${LLM_SERVER_PROFILE}" --output "$${LLM_SERVER_LOCKFILE}"
+profiles-inspect: ## Inspect LOCKFILE locally without a network request.
+	uv run python -m llm_server profiles inspect "$${LLM_SERVER_LOCKFILE}"
+profiles-diff: ## Compare PROFILE intent with LOCKFILE (non-zero when different).
+	uv run python -m llm_server profiles diff "$${LLM_SERVER_PROFILE}" --lockfile "$${LLM_SERVER_LOCKFILE}"
+profiles-apply: ## Preview LOCKFILE apply; set YES=1 to acquire and start offline.
+	@if [ "$${LLM_SERVER_YES}" = 1 ]; then uv run python -m llm_server profiles apply "$${LLM_SERVER_LOCKFILE}" --yes; else uv run python -m llm_server profiles apply "$${LLM_SERVER_LOCKFILE}"; fi
 
 ##@ Services
 .PHONY: start stop restart status logs
-start: ## Start MODEL as SERVICE on MODEL_PORT (MODEL=qwen3-8b MODEL_PORT=8080).
-	uv run python -m llm_server services start "$${LLM_SERVER_MODEL}" --name "$${LLM_SERVER_SERVICE}" --port "$${LLM_SERVER_MODEL_PORT}"
+start: ## Start MODEL as SERVICE on MODEL_PORT (optional MAX_KV_SIZE=4096).
+	@service="$${LLM_SERVER_SERVICE}"; if [ "$${LLM_SERVER_SERVICE_IS_DEFAULT}" = 1 ]; then service=$$(printf '%s' "$${LLM_SERVER_MODEL}" | sed 's|/|--|g'); fi; if [ -n "$${LLM_SERVER_MAX_KV_SIZE}" ]; then uv run python -m llm_server services start "$${LLM_SERVER_MODEL}" --name "$$service" --port "$${LLM_SERVER_MODEL_PORT}" --max-kv-size "$${LLM_SERVER_MAX_KV_SIZE}"; else uv run python -m llm_server services start "$${LLM_SERVER_MODEL}" --name "$$service" --port "$${LLM_SERVER_MODEL_PORT}"; fi
 stop: ## Stop SERVICE cleanly (SERVICE=qwen3-8b).
 	uv run python -m llm_server services stop "$${LLM_SERVER_SERVICE}"
 restart: ## Restart SERVICE with its saved settings.
@@ -63,11 +91,13 @@ logs: ## Show the last 80 lines for SERVICE (SERVICE=qwen3-8b).
 	uv run python -m llm_server services logs "$${LLM_SERVER_SERVICE}" --lines 80
 
 ##@ Quality
-.PHONY: format lint test check
+.PHONY: format lint test audit check
 format: ## Format and apply safe lint fixes.
 	uv run ruff format . && uv run ruff check --fix .
 lint: ## Check formatting and lint rules.
 	uv run ruff format --check . && uv run ruff check .
 test: ## Run the fast, offline test suite.
 	uv run pytest -q
-check: lint test ## Run the required pre-PR quality gate.
+audit: ## Audit declared dependencies for known vulnerabilities.
+	uvx --from pip-audit==2.10.1 pip-audit . --progress-spinner off
+check: lint test audit ## Run the required pre-PR quality gate.

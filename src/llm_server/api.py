@@ -2,16 +2,57 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from html import escape
+
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from . import __version__
 from .catalog import cached_models, models, search
-from .runtime import ServiceManager
+from .contracts import (
+    CatalogResponse,
+    DownloadedModelsResponse,
+    ErrorResponse,
+    HealthResponse,
+    LogsResponse,
+    SearchModelsResponse,
+    ServiceResponse,
+    ServicesResponse,
+)
+from .runtime import ServiceManager, StateCorruptError
 
 app = FastAPI(title="LLM Server", version=__version__)
 manager = ServiceManager()
+ERROR_RESPONSES = {
+    400: {"model": ErrorResponse},
+    404: {"model": ErrorResponse},
+    409: {"model": ErrorResponse},
+    422: {"model": ErrorResponse},
+    500: {"model": ErrorResponse},
+}
+
+
+def get_manager() -> ServiceManager:
+    """Dependency seam used by API contract tests and future app factories."""
+    return manager
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(_: Request, __: RequestValidationError) -> JSONResponse:
+    """Keep v1 client errors stable without exposing framework-specific validation details."""
+    return JSONResponse(
+        status_code=422, content=ErrorResponse(detail="Request validation failed").model_dump()
+    )
+
+
+@app.exception_handler(StateCorruptError)
+async def corrupt_state_error(_: Request, __: StateCorruptError) -> JSONResponse:
+    """Do not leak local state paths while returning a stable server-side failure."""
+    return JSONResponse(
+        status_code=500, content=ErrorResponse(detail="Service state is corrupt").model_dump()
+    )
 
 
 class StartRequest(BaseModel):
@@ -24,15 +65,22 @@ class StartRequest(BaseModel):
 def safe(action):
     try:
         return action()
+    except StateCorruptError:
+        raise
     except (ValueError, RuntimeError) as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
+        detail = str(error)
+        status_code = 404 if detail.startswith("Unknown service") else 400
+        if "changed concurrently" in detail or "unverified process" in detail:
+            status_code = 409
+        raise HTTPException(status_code=status_code, detail=detail) from error
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
-def dashboard() -> str:
+def dashboard(service_manager: ServiceManager = Depends(get_manager)) -> str:
     rows = "".join(
-        f"<tr><td>{s.name}</td><td>{s.repository}</td><td><b>{s.status}</b></td><td>{s.port}</td></tr>"
-        for s in manager.list()
+        f"<tr><td>{escape(s.name)}</td><td>{escape(s.repository)}</td>"
+        f"<td><b>{escape(s.status)}</b></td><td>{s.port}</td></tr>"
+        for s in service_manager.list()
     ) or (
         "<tr><td colspan=4>No managed services. Start one from the CLI or "
         "<a href='/docs'>API docs</a>.</td></tr>"
@@ -50,55 +98,72 @@ def dashboard() -> str:
     )
 
 
-@app.get("/health")
-def health() -> dict[str, str]:
+@app.get("/health", response_model=HealthResponse)
+def health() -> HealthResponse:
     return {"status": "ok", "version": __version__}
 
 
-@app.get("/api/v1/models/catalog")
-def catalog() -> dict[str, object]:
+@app.get("/api/v1/models/catalog", response_model=CatalogResponse)
+def catalog() -> CatalogResponse:
     return {"models": models()}
 
 
-@app.get("/api/v1/models/downloaded")
-def downloaded() -> dict[str, object]:
+@app.get("/api/v1/models/downloaded", response_model=DownloadedModelsResponse)
+def downloaded() -> DownloadedModelsResponse:
     return {"models": cached_models()}
 
 
-@app.get("/api/v1/models/search")
-def model_search(query: str, limit: int = 10) -> dict[str, object]:
+@app.get("/api/v1/models/search", response_model=SearchModelsResponse, responses=ERROR_RESPONSES)
+def model_search(query: str, limit: int = 10) -> SearchModelsResponse:
     return safe(lambda: {"models": search(query, limit)})
 
 
-@app.get("/api/v1/status")
-def status() -> dict[str, object]:
-    return {"services": [s.model_dump() for s in manager.list()]}
+@app.get(
+    "/api/v1/status", response_model=ServicesResponse, responses={500: {"model": ErrorResponse}}
+)
+def status(service_manager: ServiceManager = Depends(get_manager)) -> ServicesResponse:
+    return {"services": [s.model_dump() for s in service_manager.list()]}
 
 
-@app.post("/api/v1/services", status_code=202)
-def start(request: StartRequest) -> dict[str, object]:
+@app.post(
+    "/api/v1/services", status_code=202, response_model=ServiceResponse, responses=ERROR_RESPONSES
+)
+def start(
+    request: StartRequest, service_manager: ServiceManager = Depends(get_manager)
+) -> ServiceResponse:
     return safe(
-        lambda: manager.start(
+        lambda: service_manager.start(
             request.model, request.name, request.port, request.max_kv_size
         ).model_dump()
     )
 
 
-@app.post("/api/v1/services/{name}/ready")
-def ready(name: str) -> dict[str, object]:
-    return safe(lambda: manager.mark_ready(name).model_dump())
+@app.post(
+    "/api/v1/services/{name}/ready", response_model=ServiceResponse, responses=ERROR_RESPONSES
+)
+def ready(name: str, service_manager: ServiceManager = Depends(get_manager)) -> ServiceResponse:
+    return safe(lambda: service_manager.mark_ready(name).model_dump())
 
 
-@app.post("/api/v1/services/{name}/stop")
-def stop(name: str) -> dict[str, object]:
-    return safe(lambda: manager.stop(name).model_dump())
+@app.post("/api/v1/services/{name}/stop", response_model=ServiceResponse, responses=ERROR_RESPONSES)
+def stop(name: str, service_manager: ServiceManager = Depends(get_manager)) -> ServiceResponse:
+    return safe(lambda: service_manager.stop(name).model_dump())
 
 
-@app.post("/api/v1/services/{name}/restart", status_code=202)
-def restart(name: str) -> dict[str, object]:
-    return safe(lambda: manager.restart(name).model_dump())
+@app.post(
+    "/api/v1/services/{name}/restart",
+    status_code=202,
+    response_model=ServiceResponse,
+    responses=ERROR_RESPONSES,
+)
+def restart(name: str, service_manager: ServiceManager = Depends(get_manager)) -> ServiceResponse:
+    return safe(lambda: service_manager.restart(name).model_dump())
 
 
-@app.get("/api/v1/services/{name}/logs")
-def logs(name: str, lines: int = 80) -> dict[str, str]:
-    return safe(lambda: {"logs": manager.logs(name, lines)})
+@app.get("/api/v1/services/{name}/logs", response_model=LogsResponse, responses=ERROR_RESPONSES)
+def logs(
+    name: str,
+    lines: int = Query(default=80, ge=1, le=500),
+    service_manager: ServiceManager = Depends(get_manager),
+) -> LogsResponse:
+    return safe(lambda: {"logs": service_manager.logs(name, lines)})

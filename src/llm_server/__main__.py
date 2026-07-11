@@ -2,21 +2,28 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
 import uvicorn
 from rich.console import Console
 from rich.table import Table
 
 from .catalog import cached_models, delete, download, models, search
+from .profiles import diff_profile, load_lock, load_profile, plan_apply, resolve_lock, write_lock
+from .provenance import acquire_locked_snapshot
 from .runtime import ServiceManager
 
 app = typer.Typer(
     help="⚡ Manage local MLX language models on Apple Silicon.", no_args_is_help=True
 )
 models_app, services_app = typer.Typer(no_args_is_help=True), typer.Typer(no_args_is_help=True)
+profiles_app = typer.Typer(no_args_is_help=True)
 app.add_typer(models_app, name="models")
 app.add_typer(services_app, name="services")
+app.add_typer(profiles_app, name="profiles")
 console, manager = Console(), ServiceManager()
+DEFAULT_LOCK_FILE = Path("llm-server.lock.json")
 
 
 def show(items: list[dict], title: str) -> None:
@@ -65,6 +72,82 @@ def model_delete(identifier: str) -> None:
     console.print(f"[green]✓ Deleted cached entry:[/green] {identifier}")
 
 
+@profiles_app.command("validate")
+def profile_validate(path: Path) -> None:
+    """Validate a single-service JSON profile without network access."""
+    profile = load_profile(path)
+    console.print(
+        f"[green]✓ Valid profile:[/green] {profile.service.name} → "
+        f"{profile.service.model.repository}"
+    )
+
+
+@profiles_app.command("lock")
+def profile_lock(path: Path, output: Path = DEFAULT_LOCK_FILE) -> None:
+    """Resolve a profile's model to an immutable Hub commit and write a lockfile."""
+    lock = resolve_lock(load_profile(path))
+    write_lock(lock, output)
+    console.print(
+        f"[green]✓ Locked[/green] {lock.resolved_model.repository}@{lock.resolved_model.revision}"
+    )
+
+
+@profiles_app.command("inspect")
+def profile_inspect(path: Path) -> None:
+    """Inspect a lockfile locally without making a network request."""
+    lock = load_lock(path)
+    console.print(
+        f"[cyan]LOCKED[/cyan] {lock.resolved_model.repository}@{lock.resolved_model.revision}"
+    )
+
+
+@profiles_app.command("diff")
+def profile_diff(path: Path, lockfile: Path = DEFAULT_LOCK_FILE) -> None:
+    """Compare profile intent to a lockfile; this is read-only and offline."""
+    differences = diff_profile(load_profile(path), load_lock(lockfile))
+    if differences:
+        console.print("\n".join(f"[yellow]~[/yellow] {item}" for item in differences))
+        raise typer.Exit(code=1)
+    console.print("[green]✓ Profile matches lockfile[/green]")
+
+
+@profiles_app.command("plan")
+def profile_plan(lockfile: Path = DEFAULT_LOCK_FILE) -> None:
+    """Preview a lock-aware apply action; this command never changes services."""
+    plan = plan_apply(load_lock(lockfile), manager.list())
+    console.print(f"[cyan]{plan.action.upper()}[/cyan] {plan.service}: {plan.detail}")
+
+
+@profiles_app.command("apply")
+def profile_apply(lockfile: Path = DEFAULT_LOCK_FILE, yes: bool = False) -> None:
+    """Apply a locked service only with --yes; the default is a non-mutating preview."""
+    lock = load_lock(lockfile)
+    plan = plan_apply(lock, manager.list())
+    if not yes:
+        console.print(f"[cyan]{plan.action.upper()}[/cyan] {plan.service}: {plan.detail}")
+        console.print(
+            "[dim]Re-run with --yes to acquire the locked snapshot and start it offline.[/dim]"
+        )
+        return
+    if plan.action == "conflict":
+        raise typer.BadParameter(plan.detail)
+    if plan.action == "unchanged":
+        console.print(f"[green]✓ UNCHANGED[/green] {plan.service}")
+        return
+    snapshot = acquire_locked_snapshot(lock)
+    service = manager.start(
+        lock.resolved_model.repository,
+        lock.service.name,
+        lock.service.port,
+        lock.service.max_kv_size,
+        revision=lock.resolved_model.revision,
+        snapshot_path=snapshot,
+        offline=True,
+    )
+    service = manager.mark_ready(service.name)
+    console.print(f"[green]● {service.status.upper()}[/green] {service.repository}")
+
+
 @services_app.command("status")
 def service_status() -> None:
     show([s.model_dump() for s in manager.list()], "⚡ Managed services")
@@ -75,7 +158,7 @@ def service_start(
     model: str,
     name: str | None = None,
     port: int = 8080,
-    max_kv_size: int | None = None,
+    max_kv_size: int | None = typer.Option(None, min=128),
     wait: bool = True,
 ) -> None:
     service = manager.start(model, name or model.replace("/", "--"), port, max_kv_size)
