@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from .catalog import resolve
 from .contracts import ModelRef, ServiceSpec
+from .runtime import Service
 
 PROFILE_SCHEMA_VERSION = 1
 LOCK_SCHEMA_VERSION = 1
@@ -27,6 +28,12 @@ class Lockfile(BaseModel):
     profile_schema_version: int
     service: ServiceSpec
     resolved_model: ModelRef
+
+
+class ApplyPlan(BaseModel):
+    action: str
+    service: str
+    detail: str
 
 
 def load_profile(path: Path) -> Profile:
@@ -104,3 +111,31 @@ def diff_profile(profile: Profile, lock: Lockfile) -> list[str]:
             f"revision: {profile.service.model.revision} → {lock.resolved_model.revision}"
         )
     return differences
+
+
+def plan_apply(lock: Lockfile, services: list[Service]) -> ApplyPlan:
+    """Describe a lock-aware apply action without spawning, stopping, or mutating anything."""
+    desired = lock.service
+    current = next((service for service in services if service.name == desired.name), None)
+    if current is None or current.status in {"stopped", "failed"}:
+        return ApplyPlan(
+            action="start",
+            service=desired.name,
+            detail=(
+                f"would start {lock.resolved_model.repository}@{lock.resolved_model.revision} "
+                f"on port {desired.port}"
+            ),
+        )
+    if (
+        current.repository != lock.resolved_model.repository
+        or current.port != desired.port
+        or current.max_kv_size != desired.max_kv_size
+    ):
+        return ApplyPlan(
+            action="conflict",
+            service=desired.name,
+            detail="running service differs from lock; no mutation will be performed",
+        )
+    return ApplyPlan(
+        action="unchanged", service=desired.name, detail="running service matches lock intent"
+    )
