@@ -73,11 +73,13 @@ logs: ## Show the last 80 lines for SERVICE (SERVICE=qwen3-8b).
 	uv run python -m llm_server services logs "$${LLM_SERVER_SERVICE}" --lines 80
 
 ##@ Quality
-.PHONY: format lint test check
+.PHONY: format lint test audit check
 format: ## Format and apply safe lint fixes.
 	uv run ruff format . && uv run ruff check --fix .
 lint: ## Check formatting and lint rules.
 	uv run ruff format --check . && uv run ruff check .
 test: ## Run the fast, offline test suite.
 	uv run pytest -q
-check: lint test ## Run the required pre-PR quality gate.
+audit: ## Audit declared dependencies for known vulnerabilities.
+	uvx --from pip-audit==2.10.1 pip-audit . --progress-spinner off
+check: lint test audit ## Run the required pre-PR quality gate.

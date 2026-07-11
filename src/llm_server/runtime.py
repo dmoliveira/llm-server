@@ -116,6 +116,17 @@ class ServiceManager:
                 return False
         return True
 
+    @staticmethod
+    def _signal_process_group(service: Service, signal_type: signal.Signals) -> bool:
+        """Signal a verified group; an already-exited process is successfully stopped."""
+        try:
+            os.killpg(service.pid, signal_type)
+        except ProcessLookupError:
+            return False
+        except OSError as error:
+            raise RuntimeError(f"Could not signal service process: {error}") from error
+        return True
+
     def list(self) -> list[Service]:
         with self._locked():
             services, changed = self._read(), False
@@ -239,30 +250,37 @@ class ServiceManager:
                 raise RuntimeError("Service state changed concurrently; retry the operation")
             current.status = "stopping"
             self._write(services)
-        if self._owned(service):
-            if not self._owned(service):
-                raise RuntimeError(
-                    "Refusing to signal an unverified process; inspect its PID and logs"
-                )
-            os.killpg(service.pid, signal.SIGTERM)
-            deadline = time.monotonic() + timeout
-            while self._alive(service.pid) and time.monotonic() < deadline:
-                time.sleep(0.1)
+        operation_error: RuntimeError | None = None
+        try:
             if self._owned(service):
-                os.killpg(service.pid, signal.SIGKILL)
+                if not self._owned(service):
+                    raise RuntimeError(
+                        "Refusing to signal an unverified process; inspect its PID and logs"
+                    )
+                self._signal_process_group(service, signal.SIGTERM)
+                deadline = time.monotonic() + timeout
+                while self._alive(service.pid) and time.monotonic() < deadline:
+                    time.sleep(0.1)
+                if self._owned(service):
+                    self._signal_process_group(service, signal.SIGKILL)
+        except RuntimeError as error:
+            operation_error = error
         with self._locked():
             services = self._read()
             current = services.get(name)
             if current is None or not self._matches(current, service):
                 return current if current is not None else service
             services[name].status, services[name].pid, services[name].error = (
-                final_status,
+                "failed" if operation_error else final_status,
                 None,
-                final_error,
+                str(operation_error) if operation_error else final_error,
             )
             services[name].process_identity = None
             self._write(services)
-            return services[name]
+            stopped = services[name]
+        if operation_error:
+            raise operation_error
+        return stopped
 
     def restart(self, name: str) -> Service:
         service = self.get(name)
@@ -273,7 +291,10 @@ class ServiceManager:
         if not 1 <= lines <= 500:
             raise ValueError("lines must be between 1 and 500")
         service = self.get(name)
-        path = self.logs_dir / service.log_file
+        logs_root = self.logs_dir.resolve()
+        path = (logs_root / service.log_file).resolve()
+        if logs_root not in path.parents:
+            raise RuntimeError("Service log path is outside the managed logs directory")
         return (
             "No log entries yet."
             if not path.exists()

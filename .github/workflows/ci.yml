@@ -16,4 +16,3 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv sync --all-extras
       - run: make check
-      - run: uv run pip-audit

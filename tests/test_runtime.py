@@ -160,3 +160,20 @@ def test_start_rejects_a_port_owned_outside_the_manager(tmp_path: Path) -> None:
         pytest.raises(ValueError, match="already in use"),
     ):
         subject.start("qwen3-8b", "safe", 8080)
+
+
+def test_logs_reject_a_path_outside_the_managed_directory(tmp_path: Path) -> None:
+    subject = manager(tmp_path)
+    subject._write(
+        {
+            "safe": Service(
+                name="safe",
+                repository="model",
+                port=8080,
+                created_at=1,
+                log_file="../../outside.log",
+            )
+        }
+    )
+    with pytest.raises(RuntimeError, match="outside"):
+        subject.logs("safe")
