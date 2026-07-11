@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.table import Table
 
 from .catalog import cached_models, delete, download, models, search
-from .profiles import load_profile, resolve_lock, write_lock
+from .profiles import diff_profile, load_lock, load_profile, resolve_lock, write_lock
 from .runtime import ServiceManager
 
 app = typer.Typer(
@@ -89,6 +89,25 @@ def profile_lock(path: Path, output: Path = DEFAULT_LOCK_FILE) -> None:
     console.print(
         f"[green]✓ Locked[/green] {lock.resolved_model.repository}@{lock.resolved_model.revision}"
     )
+
+
+@profiles_app.command("inspect")
+def profile_inspect(path: Path) -> None:
+    """Inspect a lockfile locally without making a network request."""
+    lock = load_lock(path)
+    console.print(
+        f"[cyan]LOCKED[/cyan] {lock.resolved_model.repository}@{lock.resolved_model.revision}"
+    )
+
+
+@profiles_app.command("diff")
+def profile_diff(path: Path, lockfile: Path = DEFAULT_LOCK_FILE) -> None:
+    """Compare profile intent to a lockfile; this is read-only and offline."""
+    differences = diff_profile(load_profile(path), load_lock(lockfile))
+    if differences:
+        console.print("\n".join(f"[yellow]~[/yellow] {item}" for item in differences))
+        raise typer.Exit(code=1)
+    console.print("[green]✓ Profile matches lockfile[/green]")
 
 
 @services_app.command("status")

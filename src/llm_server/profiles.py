@@ -63,3 +63,44 @@ def resolve_lock(profile: Profile, api: HfApi | None = None) -> Lockfile:
 def write_lock(lock: Lockfile, path: Path) -> None:
     """Write stable JSON suitable for review and source control."""
     path.write_text(json.dumps(lock.model_dump(mode="json"), indent=2, sort_keys=True) + "\n")
+
+
+def load_lock(path: Path) -> Lockfile:
+    """Load a lockfile without contacting the Hub."""
+    try:
+        lock = Lockfile.model_validate_json(path.read_text())
+    except (OSError, ValueError) as error:
+        raise ValueError(f"Could not load lockfile {path}: {error}") from error
+    if lock.schema_version != LOCK_SCHEMA_VERSION:
+        raise ValueError(f"Unsupported lock schema version: {lock.schema_version}")
+    if not lock.resolved_model.revision or not COMMIT_SHA_PATTERN.fullmatch(
+        lock.resolved_model.revision
+    ):
+        raise ValueError("Lockfile does not contain a valid immutable revision")
+    return lock
+
+
+def diff_profile(profile: Profile, lock: Lockfile) -> list[str]:
+    """Return deterministic intent differences; never mutates a service."""
+    differences: list[str] = []
+    if profile.schema_version != lock.profile_schema_version:
+        differences.append(
+            f"profile schema: {profile.schema_version} → {lock.profile_schema_version}"
+        )
+    if profile.service.name != lock.service.name:
+        differences.append(f"service name: {profile.service.name} → {lock.service.name}")
+    if profile.service.port != lock.service.port:
+        differences.append(f"port: {profile.service.port} → {lock.service.port}")
+    if profile.service.max_kv_size != lock.service.max_kv_size:
+        differences.append(
+            f"max_kv_size: {profile.service.max_kv_size} → {lock.service.max_kv_size}"
+        )
+    if profile.service.model.repository != lock.resolved_model.repository:
+        differences.append(
+            f"model: {profile.service.model.repository} → {lock.resolved_model.repository}"
+        )
+    if profile.service.model.revision != lock.resolved_model.revision:
+        differences.append(
+            f"revision: {profile.service.model.revision} → {lock.resolved_model.revision}"
+        )
+    return differences

@@ -68,6 +68,10 @@ profiles-validate: ## Validate PROFILE JSON without network access.
 	uv run python -m llm_server profiles validate "$${LLM_SERVER_PROFILE}"
 profiles-lock: ## Resolve PROFILE to LOCKFILE (PROFILE=profile.json LOCKFILE=llm-server.lock.json).
 	uv run python -m llm_server profiles lock "$${LLM_SERVER_PROFILE}" --output "$${LLM_SERVER_LOCKFILE}"
+profiles-inspect: ## Inspect LOCKFILE locally without a network request.
+	uv run python -m llm_server profiles inspect "$${LLM_SERVER_LOCKFILE}"
+profiles-diff: ## Compare PROFILE intent with LOCKFILE (non-zero when different).
+	uv run python -m llm_server profiles diff "$${LLM_SERVER_PROFILE}" --lockfile "$${LLM_SERVER_LOCKFILE}"
 
 ##@ Services
 .PHONY: start stop restart status logs
