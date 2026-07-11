@@ -166,11 +166,12 @@ def service_start(
     port: int = 8080,
     max_kv_size: int | None = typer.Option(None, min=128),
     wait: bool = True,
+    startup_timeout: float = typer.Option(30.0, min=1.0, max=600.0),
 ) -> None:
     service = manager.start(model, name or model.replace("/", "--"), port, max_kv_size)
     console.print(f"[cyan]◌ STARTING[/cyan] {service.name} → http://127.0.0.1:{port}")
     if wait:
-        service = manager.mark_ready(service.name)
+        service = manager.mark_ready(service.name, startup_timeout)
         color = "green" if service.status == "ready" else "red"
         console.print(f"[{color}]● {service.status.upper()}[/{color}] {service.repository}")
 
