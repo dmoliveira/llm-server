@@ -151,3 +151,12 @@ def test_runtime_validates_log_bounds_and_kv_size(tmp_path: Path) -> None:
         subject.logs("safe", 0)
     with pytest.raises(ValueError, match="max_kv_size"):
         subject.start("qwen3-8b", "safe", 8080, 127)
+
+
+def test_start_rejects_a_port_owned_outside_the_manager(tmp_path: Path) -> None:
+    subject = manager(tmp_path)
+    with (
+        patch.object(subject, "_port_available", return_value=False),
+        pytest.raises(ValueError, match="already in use"),
+    ):
+        subject.start("qwen3-8b", "safe", 8080)

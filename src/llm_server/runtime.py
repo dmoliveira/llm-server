@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -104,6 +105,17 @@ class ServiceManager:
         """Prevent a late lifecycle operation from overwriting a replacement process."""
         return current.pid == observed.pid and current.process_identity == observed.process_identity
 
+    @staticmethod
+    def _port_available(port: int) -> bool:
+        """Fail fast when localhost already owns a requested model-service port."""
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                probe.bind(("127.0.0.1", port))
+            except OSError:
+                return False
+        return True
+
     def list(self) -> list[Service]:
         with self._locked():
             services, changed = self._read(), False
@@ -133,6 +145,8 @@ class ServiceManager:
                 raise ValueError(f"Service {name!r} is already running")
             if any(item.port == port and self._owned(item) for item in services.values()):
                 raise ValueError(f"Port {port} is already managed by a running service")
+            if not self._port_available(port):
+                raise ValueError(f"Port {port} is already in use on 127.0.0.1")
             model = resolve(identifier)
             self.logs_dir.mkdir(parents=True, exist_ok=True)
             log_path = self.logs_dir / f"{name}.log"
@@ -226,11 +240,15 @@ class ServiceManager:
             current.status = "stopping"
             self._write(services)
         if self._owned(service):
+            if not self._owned(service):
+                raise RuntimeError(
+                    "Refusing to signal an unverified process; inspect its PID and logs"
+                )
             os.killpg(service.pid, signal.SIGTERM)
             deadline = time.monotonic() + timeout
             while self._alive(service.pid) and time.monotonic() < deadline:
                 time.sleep(0.1)
-            if self._alive(service.pid):
+            if self._owned(service):
                 os.killpg(service.pid, signal.SIGKILL)
         with self._locked():
             services = self._read()

@@ -22,3 +22,8 @@ def test_log_tail_query_is_bounded() -> None:
     client = TestClient(app)
     assert client.get("/api/v1/services/example/logs?lines=0").status_code == 422
     assert client.get("/api/v1/services/example/logs?lines=501").status_code == 422
+
+
+def test_unknown_service_is_not_found() -> None:
+    client = TestClient(app)
+    assert client.post("/api/v1/services/missing/stop").status_code == 404

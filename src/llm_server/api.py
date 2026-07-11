@@ -25,7 +25,11 @@ def safe(action):
     try:
         return action()
     except (ValueError, RuntimeError) as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
+        detail = str(error)
+        status_code = 404 if detail.startswith("Unknown service") else 400
+        if "changed concurrently" in detail or "unverified process" in detail:
+            status_code = 409
+        raise HTTPException(status_code=status_code, detail=detail) from error
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
